@@ -1,112 +1,107 @@
-from json import load, JSONDecodeError
-from pydantic import BaseModel, ValidationError
 from llm_sdk.llm_sdk import Small_LLM_Model
+from .preparation import (
+    open_file,
+    check_prompts,
+    check_functions,
+    build_functions_text,
+    build_context,
+    FunctionFormat
+)
+
+from enum import Enum
 
 
-class PromptData(BaseModel):
-    prompt: str
+class State(Enum):
+    START = "start"
+    FUNCTION_KEY = "name_key"
+    FUNCTION_NAME = "function_name"
+    PARAMETERS_KEY = "parameters_key"
+    PARAMETER_NAME = "parameter_name"
+    PARAMETER_VALUE = "parameter_value"
+    END = "end"
 
 
-class ParameterInfo(BaseModel):
-    type: str
+def constrained_decoding(
+    logits: list[float],
+    model: Small_LLM_Model,
+    state: State,
+    function_list: list[FunctionFormat],
+    generated_ids: list[int],
+    function_generated_ids: list[int],
+    state_start_position: int
+) -> list[float]:
+
+    allowed_ids = model.encode("{")[0].tolist()
+    name_ids = model.encode('"name":')[0].tolist()
+    parameters_ids = model.encode('"parameters":')[0].tolist()
+
+    function_names_ids: list[list[int]] = []
+    for function in function_list:
+        function_name_ids = model.encode(function.name)[0].tolist()
+        function_names_ids.append(function_name_ids)
 
 
-class FunctionFormat(BaseModel):
-    name: str
-    description: str
-    parameters: dict[str, ParameterInfo]
-    returns: ParameterInfo
+
+    if state == State.START:
+        for token_id in range(len(logits)):
+            if token_id not in allowed_ids:
+                logits[token_id] = float("-inf")
+        return logits
+
+    elif state == State.FUNCTION_KEY:
+        current_position = len(generated_ids) - state_start_position
+        next_name_token_id = name_ids[current_position]
+        for token_id in range(len(logits)):
+            if token_id != next_name_token_id:
+                logits[token_id] = float("-inf")
+        return logits
+
+    elif state == State.FUNCTION_NAME:
+        allowed_function_ids: list[int] = []
+        current_position = len(function_generated_ids)
+
+        for function_name_ids in function_names_ids:
+            is_matching = True
+            for position in range(current_position):
+                if position >= len(function_name_ids):
+                    is_matching = False
+                    break
+                if function_generated_ids[position] != function_name_ids[position]:
+                    is_matching = False
+                    break
+            if is_matching is False:
+                continue
+            if current_position >= len(function_name_ids):
+                continue
+
+            next_function_token_id = function_name_ids[current_position]
+            if next_function_token_id not in allowed_function_ids:
+                allowed_function_ids.append(next_function_token_id)
+
+        for token_id in range(len(logits)):
+            if token_id not in allowed_function_ids:
+                logits[token_id] = float("-inf")
+
+        return logits
 
 
-def open_file(prompt_file: str) -> list:
-    """Load JSON data from a file.
-
-    Args:
-        prompt_file: Path to the JSON file
-
-    Returns:
-        The parsed JSON data as a file.
-        Returns an empty list if the file is not found
-        or the JSON in invlid.
-
-    """
-
-    try:
-        with open(prompt_file, 'r', encoding='UTF-8') as json_file:
-            return load(json_file)
-    except FileNotFoundError:
-        print("not found file")
-        return []
-    except JSONDecodeError:
-        print("It is not the correct JSON format")
-        return []
+    elif state == State.PARAMETERS_KEY:
+        current_position = len(generated_ids) - state_start_position
+        next_parameter_token_id = parameters_ids[current_position]
+        for token_id in range(len(logits)):
+            if token_id != next_parameter_token_id:
+                logits[token_id] = float("-inf")
+        return logits
 
 
-def check_prompts(prompts: list) -> list[str]:
-    """Validate prompt data and extract prompt strings.
 
-    Args:
-        prompts: Raw prompt data loaded from JSON.
+    # elif state == State.PARAMETER_NAME:
 
-    Returns:
-        A list containing all valid prompt strings.
+    # elif state == State.PARAMETER_VALUE:
 
-    """
+    # elif state == State.END:
 
-    prompt_list: list[str] = []
-    for item in prompts:
-        try:
-            prompt_data = PromptData.model_validate(item)
-            prompt_text = prompt_data.prompt
-            prompt_list.append(prompt_text)
-        except ValidationError as e:
-            print(f"Invalid prompt data: {e}")
-    return prompt_list
-
-
-def check_functions(functions: list) -> list[FunctionFormat]:
-    """Validate raw function definitions.
-
-    Args:
-
-        functions: Raw function definition data loaded from JSON.
-
-    Returns:
-
-        A list of validated FunctionFormat objects.
-
-    """
-    functions_list: list[FunctionFormat] = []
-    for item in functions:
-        try:
-            function_data = FunctionFormat.model_validate(item)
-            functions_list.append(function_data)
-        except ValidationError as e:
-            print(f"Invalid function data: {e}")
-    return functions_list
-
-
-def build_functions_text(functions_list: list[FunctionFormat]) -> str:
-    """Convert the verified functions into appropriate strings.
-
-    Args:
-        The verified functions.
-
-    Returns:
-        A formatted string describing the available functions,
-        their parameters, and return types.
-
-    """
-
-    functions_text = ""
-    for function in functions_list:
-        functions_text += f"name: {function.name}\n"
-        functions_text += f"description: {function.description}\n"
-        for parameter_name, parameter_info in function.parameters.items():
-            functions_text += f"parameter_name: {parameter_name}\n"
-            functions_text += f"parameter_info: {parameter_info.type}\n"
-        functions_text += f"returns: {function.returns.type}\n"
-    return functions_text
+    return logits
 
 
 def main() -> None:
@@ -128,16 +123,74 @@ def main() -> None:
 
     model = Small_LLM_Model()
     functions_text = build_functions_text(functions_list)
-    complete_list: list[str] = []
 
-    # for prompt in prompt_list:
-    #     tokenizer_prompt = model.encode(prompt)
-    #     tokeniser_functions = model.encode(functions_list)
-    #     output_str: list[str] = []
-    #     while
+    for prompt in prompt_list:
+        encode_context = build_context(prompt, functions_text)
+        token_ids = model.encode(encode_context)[0].tolist()
 
+        generated_ids: list[int] = []
+        function_generated_ids: list[int] = []
+        state = State.START
+        state_start_position = 0
+
+        while True:
+            logits = model.get_logits_from_input_ids(token_ids)
+            masked_logits = constrained_decoding(
+                logits,
+                model,
+                state,
+                functions_list,
+                generated_ids,
+                function_generated_ids,
+                state_start_position,
+            )
+
+            max_logit = masked_logits[0]
+            next_token_id = 0
+
+            for token_id in range(len(masked_logits)):
+                current_logit = masked_logits[token_id]
+                if current_logit > max_logit:
+                    max_logit = current_logit
+                    next_token_id = token_id
+            token_ids.append(next_token_id)
+            generated_ids.append(next_token_id)
+
+
+
+            if state == State.START:
+                state = State.FUNCTION_KEY
+                state_start_position = len(generated_ids)
+
+            elif state == State.FUNCTION_KEY:
+                function_ids = model.encode('"name":')[0].tolist()
+                state_generated_count = len(generated_ids) - state_start_position
+
+                if state_generated_count == len(function_ids):
+                    state = State.FUNCTION_NAME
+                    state_start_position = len(generated_ids)
+
+            elif state == State.FUNCTION_NAME:
+                function_generated_ids.append(next_token_id)
+
+                for function in functions_list:
+                    function_name_ids = model.encode(function.name)[0].tolist()
+                    if function_generated_ids == function_name_ids:
+                        selected_function = function
+                        state = State.PARAMETERS_KEY
+                        state_start_position = len(generated_ids)
+
+            elif state == State.PARAMETERS_KEY:
+                parameter_ids = model.encode('"parameters":')[0].tolist()
+                state_generated_count = len(generated_ids) - state_start_position
+
+                if state_generated_count == len(parameter_ids):
+                    state == State.PARAMETER_NAME
+                    state_start_position = len(generated_ids)
+
+
+            break
 
 
 if __name__ == "__main__":
     main()
-
