@@ -11,8 +11,6 @@ from .preparation import (
 from enum import Enum
 
 
-from enum import Enum
-
 class State(Enum):
     START = "start"
 
@@ -32,6 +30,54 @@ class State(Enum):
     END = "end"
 
 
+def is_complete_number(text: str) -> bool:
+    """Check whether text is a complete valid number."""
+
+    try:
+        float(text)
+    except ValueError:
+        return False
+
+    return True
+
+def is_valid_number_prefix(text: str) -> bool:
+    """Check whether text can still become a valid number."""
+
+    if text == "":
+        return True
+    if text == "-":
+        return True
+
+    if text.count(".") > 1:
+        return False
+
+    start_index = 0
+    if text[0] == "-":
+        start_index = 1
+    for character in text[start_index:]:
+        if character != "." and not character.isdigit():
+            return False
+    return True
+
+def is_valid_string_prefix(text: str) -> bool:
+    if text == "":
+        return True
+
+    if not text.startswith('"'):
+        return False
+
+    quote_count = text.count('"')
+
+    if quote_count > 2:
+        return False
+
+    if quote_count == 2:
+        if not text.endswith('"'):
+            return False
+
+    return True
+
+
 def constrained_decoding(
     logits: list[float],
     model: Small_LLM_Model,
@@ -41,6 +87,7 @@ def constrained_decoding(
     function_generated_ids: list[int],
     state_start_position: int,
     selected_function: FunctionFormat | None,
+    selected_parameter: str | None,
     parameter_generated_ids: list[int],
     value_generated_ids: list[int],
 ) -> list[float]:
@@ -56,6 +103,8 @@ def constrained_decoding(
     for function in function_list:
         function_name_ids = model.encode(function.name)[0].tolist()
         function_names_ids.append(function_name_ids)
+
+    closing_brace_ids = model.encode("}")[0].tolist()
 
 
     if state == State.START:
@@ -161,12 +210,101 @@ def constrained_decoding(
         return logits
 
     elif state == State.PARAMETER_VALUE:
-        return logits
+        if selected_function is None:
+            return logits
+        if selected_parameter is None:
+            return logits
+        parameter_info = selected_function.parameters[selected_parameter]
+        parameter_type = parameter_info.type
+
+        value_text = model.decode(value_generated_ids)
+
+        if parameter_type == "number":
+            number_is_complete = is_complete_number(value_text)
+            for token_id in range(len(logits)):
+                token_text = model.decode([token_id])
+                candidate_value = value_text + token_text
+                can_continue_number = is_valid_number_prefix(candidate_value)
+                starts_separator = False
+                if number_is_complete:
+                    if token_text.startswith(","):
+                        starts_separator = True
+                    if token_text.startswith("}"):
+                        starts_separator = True
+                if not can_continue_number and not starts_separator:
+                    logits[token_id] = float("-inf")
+            return logits
+
+        elif parameter_type == "string":
+            for token_id in range(len(logits)):
+                token_text = model.decode([token_id])
+                candidate_value = value_text + token_text
+                if not is_valid_string_prefix(candidate_value):
+                    logits[token_id] = float("-inf")
+            return logits
 
 
-    # elif state == State.END:
+        elif state == State.PARAMETER_SEPARATOR:
+            for token_id in range(len(logits)):
+                if token_id not in comma_ids:
+                    logits[token_id] = float("-inf")
+            return logits
 
+        elif state == State.PARAMETERS_END:
+            for token_id in range(len(logits)):
+                if token_id not in closing_brace_ids:
+                    logits[token_id] = float("-inf")
+            return logits
+
+        elif state == State.END:
+            for token_id in range(len(logits)):
+                if token_id not in closing_brace_ids:
+                    logits[token_id] = float("-inf")
+            return logits
     return logits
+
+def value_is_complete(
+        value_generated_ids: list[int],
+        selected_function: FunctionFormat | None,
+        selected_parameter: str,
+        model: Small_LLM_Model,
+        next_token_id: int,
+    ) -> bool:
+
+    if not value_generated_ids:
+        return False
+
+    if selected_function is None:
+        return False
+
+    if selected_parameter is None:
+        return False
+
+    parameter_info = selected_function.parameters[selected_parameter]
+    parameter_type = parameter_info.type
+
+    value_text = model.decode(value_generated_ids)
+    next_token_text = model.decode([next_token_id])
+
+    if parameter_type == "number":
+        try:
+            float(value_text)
+        except ValueError:
+            return False
+        if next_token_text.startswith(","):
+            return True
+
+        if next_token_text.startswith("}"):
+            return True
+        return False
+
+    if parameter_type == "string":
+        if value_text.startswith('"') and value_text.endswith('"'):
+            return True
+        return False
+
+    return False
+
 
 
 def main() -> None:
@@ -198,9 +336,11 @@ def main() -> None:
         function_generated_ids: list[int] = []
         parameter_generated_ids: list[int] = []
         value_generated_ids: list[int] = []
+        completed_parameters: list[str] = []
         state = State.START
         state_start_position = 0
         selected_function = None
+        selected_parameter = None
 
 
         while True:
@@ -214,6 +354,7 @@ def main() -> None:
                 function_generated_ids,
                 state_start_position,
                 selected_function,
+                selected_parameter,
                 parameter_generated_ids,
                 value_generated_ids,
             )
@@ -252,6 +393,7 @@ def main() -> None:
                         selected_function = function
                         state = State.FUNCTION_SEPARATOR
                         state_start_position = len(generated_ids)
+                        break
 
             elif state == State.FUNCTION_SEPARATOR:
                 state = State.PARAMETERS_KEY
@@ -281,30 +423,48 @@ def main() -> None:
                             state = State.PARAMETER_COLON
                             state_start_position = len(generated_ids)
                             break
+
             elif state == State.PARAMETER_COLON:
                 state = State.PARAMETER_VALUE
                 state_start_position = len(generated_ids)
 
             elif state == State.PARAMETER_VALUE:
-                value_generated_ids.append(next_token_id)
-
-                completed_parameters: list[str] = []
                 if selected_function is not None and selected_parameter is not None:
-                    if value_is_complete:
+                    if value_is_complete(
+                        value_generated_ids,
+                        selected_function,
+                        selected_parameter,
+                        model,
+                        next_token_id
+                    ):
                         completed_parameters.append(selected_parameter)
 
                         if len(completed_parameters) == len(selected_function.parameters):
-                            state = State.PARAMETER_SEPARATOR
+
+                            state = State.PARAMETERS_END
                         else:
-                            state = State.PARAMETER_NAME
+                            state = State.PARAMETER_SEPARATOR
                         state_start_position = len(generated_ids)
+                    else:
+                        value_generated_ids.append(next_token_id)
 
             elif state == State.PARAMETER_SEPARATOR:
+                state = State.PARAMETER_NAME
+                parameter_generated_ids = []
+                value_generated_ids = []
+                selected_parameter = None
+                state_start_position = len(generated_ids)
 
             elif state == State.PARAMETERS_END:
+                state = State.END
+                state_start_position = len(generated_ids)
 
-            elif state ==State.END:
+            elif state == State.END:
+                break
 
+    aaa = model.decode(generated_ids)
+    print(aaa)
+    return logits
 
 
 
