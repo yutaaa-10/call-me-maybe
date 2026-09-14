@@ -1,13 +1,14 @@
-PYTHON := python3
+PYTHON = python
+NAME = -m src
+DIFINITION = call-me-maybe/data/input/function_calling_tests.json
+INPUT = call-me-maybe/data/input/functions_definition.json
+OUTPUT = call-me-maybe/data/output/function_calling_results.json
 
 install:
-	@$(PYTHON) -m pip install flake8 mypy
-
-build:
-	@$(PYTHON) -m build
+	uv tool pip install flake8 mypy
 
 run:
-	@$(PYTHON) -m src
+	uv run $(PYTHON) $(NAME) --functions_definition $(DIFINITTION) --input $(INPUT) --output $(OUTPUT)
 
 debug:
 	@$(PYTHON) -m pdb src

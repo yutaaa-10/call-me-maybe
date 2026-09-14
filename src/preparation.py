@@ -1,21 +1,6 @@
 from json import load, JSONDecodeError
-from pydantic import BaseModel, ValidationError
-
-
-class PromptData(BaseModel):
-    prompt: str
-
-
-class ParameterInfo(BaseModel):
-    type: str
-
-
-class FunctionFormat(BaseModel):
-    name: str
-    description: str
-    parameters: dict[str, ParameterInfo]
-    returns: ParameterInfo
-
+from pydantic import ValidationError
+from .models import PromptData, FunctionFormat
 
 def open_file(prompt_file: str) -> list:
     """Load JSON data from a file.
