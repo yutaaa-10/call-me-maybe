@@ -5,6 +5,11 @@ from .validators import (
     is_complete_number
 )
 
+def maked_start(logits: list[float], braces_id: list[int]) -> list[float]:
+    for token_id in range(len(logits)):
+        if token_id not in braces_id:
+            logits[token_id] = float("-inf")
+    return logits
 
 def constrained_decoding(
     logits: list[float],
@@ -36,10 +41,7 @@ def constrained_decoding(
 
 
     if state == State.START:
-        for token_id in range(len(logits)):
-            if token_id not in braces_id:
-                logits[token_id] = float("-inf")
-        return logits
+        return maked_start(logits, braces_id)
 
     elif state == State.FUNCTION_KEY:
         current_position = len(generated_ids) - state_start_position
