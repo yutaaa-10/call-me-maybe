@@ -13,8 +13,6 @@ from .validators import value_is_complete
 from .decoder import constrained_decoding
 
 
-
-
 def main() -> None:
     """Run the function-calling generation workflow.
 
