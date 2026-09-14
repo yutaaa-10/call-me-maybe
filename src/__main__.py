@@ -9,6 +9,7 @@ from .preparation import (
 )
 
 from enum import Enum
+import json
 
 
 class State(Enum):
@@ -42,15 +43,12 @@ def is_complete_number(text: str) -> bool:
 
 def is_valid_number_prefix(text: str) -> bool:
     """Check whether text can still become a valid number."""
-
     if text == "":
         return True
     if text == "-":
         return True
-
     if text.count(".") > 1:
         return False
-
     start_index = 0
     if text[0] == "-":
         start_index = 1
@@ -62,19 +60,14 @@ def is_valid_number_prefix(text: str) -> bool:
 def is_valid_string_prefix(text: str) -> bool:
     if text == "":
         return True
-
     if not text.startswith('"'):
         return False
-
     quote_count = text.count('"')
-
     if quote_count > 2:
         return False
-
     if quote_count == 2:
         if not text.endswith('"'):
             return False
-
     return True
 
 
@@ -101,7 +94,7 @@ def constrained_decoding(
 
     function_names_ids: list[list[int]] = []
     for function in function_list:
-        function_name_ids = model.encode(function.name)[0].tolist()
+        function_name_ids = model.encode(f'"{function.name}"')[0].tolist()
         function_names_ids.append(function_name_ids)
 
     closing_brace_ids = model.encode("}")[0].tolist()
@@ -176,7 +169,7 @@ def constrained_decoding(
             return logits
         parameter_names_ids: list[list[int]] = []
         for parameter_name in selected_function.parameters:
-            parameter_name_ids = model.encode(parameter_name)[0].tolist()
+            parameter_name_ids = model.encode(f'"{parameter_name}"')[0].tolist()
             parameter_names_ids.append(parameter_name_ids)
         allowed_parameter_ids: list[int] = []
         current_position = len(parameter_generated_ids)
@@ -227,36 +220,67 @@ def constrained_decoding(
                 can_continue_number = is_valid_number_prefix(candidate_value)
                 starts_separator = False
                 if number_is_complete:
-                    if token_text.startswith(","):
+                    if token_id in comma_ids:
                         starts_separator = True
-                    if token_text.startswith("}"):
+                    if token_id in closing_brace_ids:
                         starts_separator = True
                 if not can_continue_number and not starts_separator:
                     logits[token_id] = float("-inf")
             return logits
 
         elif parameter_type == "string":
+            quote_ids = model.encode('"')[0].tolist()
             for token_id in range(len(logits)):
                 token_text = model.decode([token_id])
                 candidate_value = value_text + token_text
-                if not is_valid_string_prefix(candidate_value):
+                if value_text == "":
+                    if token_id not in quote_ids:
+                        logits[token_id] = float("-inf")
+                    continue
+                if not value_text.startswith('"'):
                     logits[token_id] = float("-inf")
+                    continue
+                if "\n" in token_text or "\r" in token_text:
+                    logits[token_id] = float("-inf")
+                    continue
+                if "{" in token_text or "}" in token_text:
+                    logits[token_id] = float("-inf")
+                    continue
+                if '\\"' in token_text:
+                    logits[token_id] = float("-inf")
+                    continue
+                if candidate_value == '""':
+                    logits[token_id] = float("-inf")
+                    continue
+                if candidate_value.count('"') > 2:
+                    logits[token_id] = float("-inf")
+                    continue
+                if candidate_value.count('"') == 2:
+                    if not candidate_value.endswith('"'):
+                        logits[token_id] = float("-inf")
+                        continue
+            if len(value_text) > 1:
+
+                for quote_id in quote_ids:
+
+                    if logits[quote_id] != float("-inf"):
+
+                        logits[quote_id] += 4.0
             return logits
 
+    elif state == State.PARAMETER_SEPARATOR:
+        for token_id in range(len(logits)):
+            if token_id not in comma_ids:
+                logits[token_id] = float("-inf")
+        return logits
 
-        elif state == State.PARAMETER_SEPARATOR:
-            for token_id in range(len(logits)):
-                if token_id not in comma_ids:
-                    logits[token_id] = float("-inf")
-            return logits
-
-        elif state == State.PARAMETERS_END:
+    elif state == State.PARAMETERS_END:
             for token_id in range(len(logits)):
                 if token_id not in closing_brace_ids:
                     logits[token_id] = float("-inf")
             return logits
 
-        elif state == State.END:
+    elif state == State.END:
             for token_id in range(len(logits)):
                 if token_id not in closing_brace_ids:
                     logits[token_id] = float("-inf")
@@ -268,7 +292,6 @@ def value_is_complete(
         selected_function: FunctionFormat | None,
         selected_parameter: str,
         model: Small_LLM_Model,
-        next_token_id: int,
     ) -> bool:
 
     if not value_generated_ids:
@@ -277,33 +300,27 @@ def value_is_complete(
     if selected_function is None:
         return False
 
-    if selected_parameter is None:
-        return False
-
     parameter_info = selected_function.parameters[selected_parameter]
     parameter_type = parameter_info.type
 
     value_text = model.decode(value_generated_ids)
-    next_token_text = model.decode([next_token_id])
 
     if parameter_type == "number":
         try:
             float(value_text)
+            return True
         except ValueError:
             return False
-        if next_token_text.startswith(","):
-            return True
-
-        if next_token_text.startswith("}"):
-            return True
-        return False
-
     if parameter_type == "string":
-        if value_text.startswith('"') and value_text.endswith('"'):
-            return True
-        return False
-
-    return False
+        if len(value_text) < 3:
+            return False
+        if not value_text.startswith('"'):
+            return False
+        if not value_text.endswith('"'):
+            return False
+        if value_text.count('"') != 2:
+            return False
+        return True
 
 
 
@@ -326,9 +343,11 @@ def main() -> None:
 
     model = Small_LLM_Model()
     functions_text = build_functions_text(functions_list)
+    results: list[dict] = []
 
 
     for prompt in prompt_list:
+        print("CURRENT PROMPT:", prompt)
         encode_context = build_context(prompt, functions_text)
         token_ids = model.encode(encode_context)[0].tolist()
 
@@ -343,7 +362,22 @@ def main() -> None:
         selected_parameter = None
 
 
+        generation_count = 0
         while True:
+
+            generation_count += 1
+
+            if generation_count > 200:
+
+                print("Generation limit reached")
+
+                print("PROMPT:", prompt)
+
+                print("STATE:", state)
+
+                print("VALUE:", model.decode(value_generated_ids))
+
+                break
             logits = model.get_logits_from_input_ids(token_ids)
             masked_logits = constrained_decoding(
                 logits,
@@ -384,11 +418,14 @@ def main() -> None:
                     state = State.FUNCTION_NAME
                     state_start_position = len(generated_ids)
 
+
+
             elif state == State.FUNCTION_NAME:
                 function_generated_ids.append(next_token_id)
-
                 for function in functions_list:
-                    function_name_ids = model.encode(function.name)[0].tolist()
+                    function_name_ids = model.encode(
+                        f'"{function.name}"'
+                    )[0].tolist()
                     if function_generated_ids == function_name_ids:
                         selected_function = function
                         state = State.FUNCTION_SEPARATOR
@@ -416,7 +453,7 @@ def main() -> None:
 
                 if selected_function is not None:
                     for parameter_name in selected_function.parameters:
-                        parameter_name_ids = model.encode(parameter_name)[0].tolist()
+                        parameter_name_ids = model.encode(f'"{parameter_name}"')[0].tolist()
 
                         if parameter_generated_ids == parameter_name_ids:
                             selected_parameter = parameter_name
@@ -430,23 +467,44 @@ def main() -> None:
 
             elif state == State.PARAMETER_VALUE:
                 if selected_function is not None and selected_parameter is not None:
-                    if value_is_complete(
-                        value_generated_ids,
-                        selected_function,
-                        selected_parameter,
-                        model,
-                        next_token_id
-                    ):
-                        completed_parameters.append(selected_parameter)
-
-                        if len(completed_parameters) == len(selected_function.parameters):
-
-                            state = State.PARAMETERS_END
+                    parameter_info = selected_function.parameters[selected_parameter]
+                    parameter_type = parameter_info.type
+                    next_token_text = model.decode([next_token_id])
+                    if parameter_type == "number":
+                        if next_token_text.startswith(","):
+                            completed_parameters.append(selected_parameter)
+                            parameter_generated_ids = []
+                            value_generated_ids = []
+                            selected_parameter = None
+                            if next_token_text.startswith(',"'):
+                                parameter_generated_ids = model.encode('"')[0].tolist()
+                            state = State.PARAMETER_NAME
+                            state_start_position = len(generated_ids)
+                        elif next_token_text.startswith("}"):
+                            completed_parameters.append(selected_parameter)
+                            value_generated_ids = []
+                            selected_parameter = None
+                            state = State.END
+                            state_start_position = len(generated_ids)
                         else:
-                            state = State.PARAMETER_SEPARATOR
-                        state_start_position = len(generated_ids)
+                            value_generated_ids.append(next_token_id)
                     else:
                         value_generated_ids.append(next_token_id)
+                        if value_is_complete(
+                            value_generated_ids,
+                            selected_function,
+                            selected_parameter,
+                            model,
+                        ):
+                            completed_parameters.append(selected_parameter)
+                            if len(completed_parameters) == len(
+                                selected_function.parameters
+                            ):
+                                state = State.PARAMETERS_END
+                            else:
+                                state = State.PARAMETER_SEPARATOR
+                            state_start_position = len(generated_ids)
+
 
             elif state == State.PARAMETER_SEPARATOR:
                 state = State.PARAMETER_NAME
@@ -460,13 +518,19 @@ def main() -> None:
                 state_start_position = len(generated_ids)
 
             elif state == State.END:
+                generated_text = model.decode(generated_ids)
+                generated_result = json.loads(generated_text)
+                result = {
+                    "prompt": prompt,
+                    "name": generated_result["name"],
+                    "parameters": generated_result["parameters"],
+                }
+                results.append(result)
                 break
 
-    aaa = model.decode(generated_ids)
-    print(aaa)
+    with open("output.json", "w", encoding="utf-8") as file:
+        json.dump(results, file, indent=4, ensure_ascii=False)
     return logits
-
-
 
 if __name__ == "__main__":
     main()
