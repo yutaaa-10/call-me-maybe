@@ -8,9 +8,12 @@ from .preparation import (
     build_functions_text,
     build_context,
 )
+from .state_handler import handle_function_name, handle_parameter_name
+
 
 from .validators import value_is_complete
 from .decoder import constrained_decoding
+
 
 
 def main() -> None:
@@ -108,18 +111,18 @@ def main() -> None:
                     state_start_position = len(generated_ids)
 
 
-
             elif state == State.FUNCTION_NAME:
-                function_generated_ids.append(next_token_id)
-                for function in functions_list:
-                    function_name_ids = model.encode(
-                        f'"{function.name}"'
-                    )[0].tolist()
-                    if function_generated_ids == function_name_ids:
-                        selected_function = function
-                        state = State.FUNCTION_SEPARATOR
-                        state_start_position = len(generated_ids)
-                        break
+                (
+                    state,
+                    selected_function,
+                    state_start_position,
+                ) = handle_function_name(
+                    model,
+                    function_generated_ids,
+                    functions_list,
+                    generated_ids,
+                    next_token_id,
+                )
 
             elif state == State.FUNCTION_SEPARATOR:
                 state = State.PARAMETERS_KEY
@@ -138,17 +141,18 @@ def main() -> None:
                 state_start_position = len(generated_ids)
 
             elif state == State.PARAMETER_NAME:
-                parameter_generated_ids.append(next_token_id)
+                (
+                    state,
+                    selected_parameter,
+                    state_start_position,
+                ) = handle_function_name(
+                    model,
+                    parameter_generated_ids,
+                    selected_function,
+                    generated_ids,
+                    next_token_id,
+                )
 
-                if selected_function is not None:
-                    for parameter_name in selected_function.parameters:
-                        parameter_name_ids = model.encode(f'"{parameter_name}"')[0].tolist()
-
-                        if parameter_generated_ids == parameter_name_ids:
-                            selected_parameter = parameter_name
-                            state = State.PARAMETER_COLON
-                            state_start_position = len(generated_ids)
-                            break
 
             elif state == State.PARAMETER_COLON:
                 state = State.PARAMETER_VALUE
