@@ -8,11 +8,9 @@ from .preparation import (
     build_functions_text,
     build_context,
 )
-from .state_handler import handle_function_name, handle_parameter_name
-
-
-from .validators import value_is_complete
+from .state_handler import handle_function_name, handle_parameter_name, handle_parameter_value
 from .decoder import constrained_decoding
+import os
 
 
 
@@ -53,23 +51,7 @@ def main() -> None:
         selected_function = None
         selected_parameter = None
 
-
-        generation_count = 0
         while True:
-
-            generation_count += 1
-
-            if generation_count > 200:
-
-                print("Generation limit reached")
-
-                print("PROMPT:", prompt)
-
-                print("STATE:", state)
-
-                print("VALUE:", model.decode(value_generated_ids))
-
-                break
             logits = model.get_logits_from_input_ids(token_ids)
             masked_logits = constrained_decoding(
                 logits,
@@ -145,7 +127,7 @@ def main() -> None:
                     state,
                     selected_parameter,
                     state_start_position,
-                ) = handle_function_name(
+                ) = handle_parameter_name(
                     model,
                     parameter_generated_ids,
                     selected_function,
@@ -159,45 +141,22 @@ def main() -> None:
                 state_start_position = len(generated_ids)
 
             elif state == State.PARAMETER_VALUE:
-                if selected_function is not None and selected_parameter is not None:
-                    parameter_info = selected_function.parameters[selected_parameter]
-                    parameter_type = parameter_info.type
-                    next_token_text = model.decode([next_token_id])
-                    if parameter_type == "number":
-                        if next_token_text.startswith(","):
-                            completed_parameters.append(selected_parameter)
-                            parameter_generated_ids = []
-                            value_generated_ids = []
-                            selected_parameter = None
-                            if next_token_text.startswith(',"'):
-                                parameter_generated_ids = model.encode('"')[0].tolist()
-                            state = State.PARAMETER_NAME
-                            state_start_position = len(generated_ids)
-                        elif next_token_text.startswith("}"):
-                            completed_parameters.append(selected_parameter)
-                            value_generated_ids = []
-                            selected_parameter = None
-                            state = State.END
-                            state_start_position = len(generated_ids)
-                        else:
-                            value_generated_ids.append(next_token_id)
-                    else:
-                        value_generated_ids.append(next_token_id)
-                        if value_is_complete(
-                            value_generated_ids,
-                            selected_function,
-                            selected_parameter,
-                            model,
-                        ):
-                            completed_parameters.append(selected_parameter)
-                            if len(completed_parameters) == len(
-                                selected_function.parameters
-                            ):
-                                state = State.PARAMETERS_END
-                            else:
-                                state = State.PARAMETER_SEPARATOR
-                            state_start_position = len(generated_ids)
-
+                (
+                    state,
+                    selected_parameter,
+                    parameter_generated_ids,
+                    value_generated_ids,
+                    state_start_position,
+                ) = handle_parameter_value (
+                    model,
+                    selected_function,
+                    selected_parameter,
+                    next_token_id,
+                    generated_ids,
+                    parameter_generated_ids,
+                    value_generated_ids,
+                    completed_parameters,
+                )
 
             elif state == State.PARAMETER_SEPARATOR:
                 state = State.PARAMETER_NAME
@@ -212,6 +171,7 @@ def main() -> None:
 
             elif state == State.END:
                 generated_text = model.decode(generated_ids)
+                print("GENERATED:", repr(generated_text))
                 generated_result = json.loads(generated_text)
                 result = {
                     "prompt": prompt,
@@ -221,7 +181,9 @@ def main() -> None:
                 results.append(result)
                 break
 
-    with open("output.json", "w", encoding="utf-8") as file:
+    dir_path = "data/output"
+    os.makedirs(dir_path, exist_ok = True)
+    with open(f"{dir_path}/function_calling_results.json", "w", encoding="utf-8") as file:
         json.dump(results, file, indent=4, ensure_ascii=False)
     return logits
 
