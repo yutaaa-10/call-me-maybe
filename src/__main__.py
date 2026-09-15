@@ -16,11 +16,8 @@ import os
 
 def main() -> None:
     """Run the function-calling generation workflow.
-
     Load and validate prompts and function definitions, initialize the
-
     language model, prepare the available function information, and
-
     process each prompt to generate function calls.
 
     """

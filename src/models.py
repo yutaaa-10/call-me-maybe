@@ -2,20 +2,29 @@ from pydantic import BaseModel
 from enum import Enum
 
 class PromptData(BaseModel):
+    """Represent and validate a user prompt."""
     prompt: str
 
 
 class ParameterInfo(BaseModel):
+    """Represent and validate information about a parameter type."""
     type: str
 
 
 class FunctionFormat(BaseModel):
+    """Represent and validate a function definition.
+    A function definition contains its name, description,
+    parameters, and return type.
+
+    """
     name: str
     description: str
     parameters: dict[str, ParameterInfo]
     returns: ParameterInfo
 
 class State(Enum):
+    """Represent each state of the constrained JSON generation process."""
+
     START = "start"
 
     FUNCTION_KEY = "function_key"

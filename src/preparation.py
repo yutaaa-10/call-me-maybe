@@ -52,11 +52,9 @@ def check_functions(functions: list) -> list[FunctionFormat]:
     """Validate raw function definitions.
 
     Args:
-
         functions: Raw function definition data loaded from JSON.
 
     Returns:
-
         A list of validated FunctionFormat objects.
 
     """
@@ -96,53 +94,31 @@ def build_context(prompt: str, functions_text: str) -> str:
     """Build the input context for the language model.
 
     Args:
-
         prompt: User request to convert into a function call.
-
         functions_text: Text describing the available functions.
 
     Returns:
-
         A formatted context containing the functions and user request.
 
     """
 
     return (
-
         "Available functions:\n"
-
         f"{functions_text}\n"
-
         "Choose the correct function and exact parameter values.\n"
-
         "Do not add extra characters to string parameters.\n"
-
         "For regex parameters, generate only the pattern needed to match "
-
         "the requested target.\n"
-
         "For replacement parameters, generate only the literal replacement "
-
         "requested by the user.\n"
-
         "\n"
-
         "Examples:\n"
-
         "Request: Replace all vowels in 'hello' with asterisks\n"
-
         'Output parameters: {"regex":"[aeiouAEIOU]","replacement":"*"}\n'
-
         "\n"
-
         "Request: Replace the word 'cat' with 'dog'\n"
-
         'Output parameters: {"regex":"cat","replacement":"dog"}\n'
-
         "\n"
-
         f"User request: {prompt}\n"
-
         "Output:\n"
-
     )

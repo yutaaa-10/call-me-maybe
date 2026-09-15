@@ -7,6 +7,17 @@ from .models import FunctionFormat
 
 
 def mask_allow_token(logits: list[float], allowed_ids: list[int]) -> list[float]:
+    """Mask all tokens except the explicitly allowed token IDs.
+
+    Args:
+        logits: Scores for every token in the model vocabulary.
+        allowed_ids: Token IDs that are allowed to remain selectable.
+
+    Returns:
+        The logits with all disallowed tokens set to negative infinity.
+
+    """
+
     for token_id in range(len(logits)):
         if token_id not in allowed_ids:
             logits[token_id] = float("-inf")
@@ -19,6 +30,21 @@ def mask_fixed_sequence(
     state_start_position: int,
     expected_ids: list[int]
 ) -> list[float]:
+    """Allow only the next token of a predefined token sequence.
+    The current position in the sequence is calculated from the number
+    of tokens generated since entering the current state.
+
+    Args:
+        logits: Scores for every token in the model vocabulary.
+        generated_ids: Token IDs generated for the current output.
+        state_start_position: Position where the current state started.
+        expected_ids: Token IDs of the fixed sequence to generate.
+
+    Returns:
+        The logits with only the expected next token left selectable.
+
+    """
+
     current_position = len(generated_ids) - state_start_position
     for token_id in range(len(logits)):
         if token_id != expected_ids[current_position]:
@@ -31,6 +57,20 @@ def mask_function_name(
     function_generated_ids: list[int],
     function_names_ids: list[list[int]]
 ) -> list[float]:
+    """Restrict generation to valid function-name continuations.
+    Function names whose token prefix does not match the tokens already
+    generated are discarded. Only valid next tokens from the remaining
+    function names are allowed.
+
+    Args:
+        logits: Scores for every token in the model vocabulary.
+        function_generated_ids: Function-name tokens generated so far.
+        function_names_ids: Tokenized names of all available functions.
+
+    Returns:
+        The logits restricted to valid next function-name tokens.
+
+    """
 
     allowed_function_ids: list[int] = []
     current_position = len(function_generated_ids)
@@ -62,7 +102,20 @@ def mask_parameter_name(
     selected_function: FunctionFormat | None,
     parameter_generated_ids: list[int]
 ) -> list[float]:
+    """Restrict generation to parameter names of the selected function.
+    Parameter names are tokenized and compared with the prefix generated
+    so far. Only tokens that can continue a valid parameter name remain.
 
+    Args:
+        logits: Scores for every token in the model vocabulary.
+        model: Language model used to encode parameter names.
+        selected_function: Function whose parameter name is being generated.
+        parameter_generated_ids: Parameter-name tokens generated so far.
+
+    Returns:
+        The logits restricted to valid next parameter-name tokens.
+
+    """
     if selected_function is None:
         return logits
     parameter_names_ids: list[list[int]] = []
@@ -100,6 +153,22 @@ def parameter_value_number(
     comma_ids: list[int],
     closing_brace_ids: list[int]
 ) -> list[float]:
+    """Restrict generation to tokens that can form a valid number.
+    Tokens that cannot continue the current numeric value are masked.
+    Once the current value is a complete number, a comma or closing
+    brace is also allowed to terminate the value.
+
+    Args:
+        logits: Scores for every token in the model vocabulary.
+        model: Language model used to decode candidate tokens.
+        value_text: Numeric value generated so far.
+        comma_ids: Token IDs representing a comma.
+        closing_brace_ids: Token IDs representing a closing brace.
+
+    Returns:
+        The logits restricted to valid numeric continuations or endings.
+
+    """
 
     number_is_complete = is_complete_number(value_text)
     for token_id in range(len(logits)):
@@ -122,7 +191,21 @@ def parameter_value_string(
     model: Small_LLM_Model,
     value_text: str
 ) -> list[float]:
+    """Restrict generation to tokens that can form a valid JSON string.
+    The string must begin with a double quote and must not contain tokens
+    that would break the surrounding JSON structure. Once some content
+    has been generated, the closing quote receives a small logit bonus
+    to encourage the model to finish the string.
 
+    Args:
+        logits: Scores for every token in the model vocabulary.
+        model: Language model used to encode and decode tokens.
+        value_text: String value generated so far.
+
+    Returns:
+        The logits restricted to valid string continuations.
+
+    """
     quote_ids = model.encode('"')[0].tolist()
     for token_id in range(len(logits)):
         token_text = model.decode([token_id])
@@ -164,18 +247,36 @@ def mask_parameter_value(
     logits: list[float],
     model: Small_LLM_Model,
     selected_function: FunctionFormat | None,
-    selected_parameter: str | None, value_generated_ids: list[int],
+    selected_parameter: str | None,
+    value_generated_ids: list[int],
     comma_ids: list[int],
     closing_brace_ids: list[int]
 ) -> list[float]:
+    """Apply value constraints based on the selected parameter type.
+    The selected parameter definition is inspected to determine its type.
+    Numeric parameters are handled by the number-value mask, while string
+    parameters are handled by the string-value mask.
 
+    Args:
+        logits: Scores for every token in the model vocabulary.
+        model: Language model used for token encoding and decoding.
+        selected_function: Function currently being generated.
+        selected_parameter: Parameter currently being generated.
+        value_generated_ids: Value tokens generated so far.
+        comma_ids: Token IDs representing a comma.
+        closing_brace_ids: Token IDs representing a closing brace.
+
+    Returns:
+        The logits after applying constraints for the parameter type.
+
+    """
     if selected_function is None:
         return logits
     if selected_parameter is None:
         return logits
+
     parameter_info = selected_function.parameters[selected_parameter]
     parameter_type = parameter_info.type
-
     value_text = model.decode(value_generated_ids)
 
     if parameter_type == "number":

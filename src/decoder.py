@@ -22,6 +22,28 @@ def constrained_decoding(
     parameter_generated_ids: list[int],
     value_generated_ids: list[int],
 ) -> list[float]:
+    """Apply decoding constraints based on the current generation state.
+    The current state determines which tokens are valid for the next
+    generation step. The corresponding mask function is applied to the
+    logits so that invalid tokens cannot be selected.
+
+    Args:
+        logits: Scores for every token in the model vocabulary.
+        model: Language model used for token encoding and decoding.
+        state: Current state of the JSON generation process.
+        functions_list: Available function definitions.
+        generated_ids: Token IDs generated for the complete output so far.
+        function_generated_ids: Function-name tokens generated so far.
+        state_start_position: Position where the current state started.
+        selected_function: Function selected by the model.
+        selected_parameter: Parameter currently being generated.
+        parameter_generated_ids: Parameter-name tokens generated so far.
+        value_generated_ids: Parameter-value tokens generated so far.
+
+    Returns:
+        The logits after applying the constraints for the current state.
+
+    """
 
     braces_id = model.encode("{")[0].tolist()
     comma_ids = model.encode(",")[0].tolist()

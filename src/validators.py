@@ -1,5 +1,13 @@
 def is_complete_number(text: str) -> bool:
-    """Check whether text is a complete valid number."""
+    """Check whether the given text represents a complete valid number.
+
+    Args:
+        text: Text to validate as a number.
+
+    Returns:
+        True if the text can be converted to a number, otherwise False.
+
+    """
 
     try:
         float(text)
@@ -9,7 +17,18 @@ def is_complete_number(text: str) -> bool:
     return True
 
 def is_valid_number_prefix(text: str) -> bool:
-    """Check whether text can still become a valid number."""
+    """Check whether the text can still become a valid number.
+    The text may be incomplete, such as an empty string or a minus sign,
+    as long as additional characters could form a valid number.
+
+    Args:
+        text: Numeric text generated so far.
+
+    Returns:
+        True if the text is a valid numeric prefix, otherwise False.
+
+    """
+
     if text == "":
         return True
     if text == "-":
@@ -25,6 +44,18 @@ def is_valid_number_prefix(text: str) -> bool:
     return True
 
 def is_valid_string_prefix(text: str) -> bool:
+    """Check whether the text can still form a valid quoted string.
+    The text must start with a double quote and may contain at most
+    one opening and one closing quote.
+
+    Args:
+        text: String text generated so far.
+
+    Returns:
+        True if the text is a valid string prefix, otherwise False.
+
+    """
+
     if text == "":
         return True
     if not text.startswith('"'):
