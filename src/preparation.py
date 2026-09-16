@@ -107,6 +107,8 @@ def build_context(prompt: str, functions_text: str) -> str:
         f"{functions_text}\n"
         "Choose the correct function and exact parameter values.\n"
         "Do not add extra characters to string parameters.\n"
+        "Choose the function based n the user's requested options,"
+        "not simply on words or numbers that appear in the output\n"
         "For regex parameters, generate only the pattern needed to match "
         "the requested target.\n"
         "For replacement parameters, generate only the literal replacement "

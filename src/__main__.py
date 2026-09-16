@@ -75,8 +75,6 @@ def main() -> None:
             token_ids.append(next_token_id)
             generated_ids.append(next_token_id)
 
-
-
             if state == State.START:
                 state = State.FUNCTION_KEY
                 state_start_position = len(generated_ids)
@@ -88,7 +86,6 @@ def main() -> None:
                 if state_generated_count == len(function_ids):
                     state = State.FUNCTION_NAME
                     state_start_position = len(generated_ids)
-
 
             elif state == State.FUNCTION_NAME:
                 (
@@ -184,7 +181,6 @@ def main() -> None:
     os.makedirs(dir_path, exist_ok = True)
     with open(f"{dir_path}/function_calling_results.json", "w", encoding="utf-8") as file:
         json.dump(results, file, indent=4, ensure_ascii=False)
-    return logits
 
 if __name__ == "__main__":
     main()
