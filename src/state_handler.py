@@ -247,6 +247,7 @@ def handle_parameter_value(
         else:
             state = State.PARAMETER_SEPARATOR
 
+
         return(
             state,
             selected_parameter,
@@ -261,9 +262,3 @@ def handle_parameter_value(
         value_generated_ids,
         len(generated_ids),
     )
-
-
-
-
-
-
