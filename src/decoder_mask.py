@@ -141,8 +141,6 @@ def mask_parameter_name(
         next_parameter_token_id = parameter_name_ids[current_position]
         if next_parameter_token_id not in allowed_parameter_ids:
             allowed_parameter_ids.append(next_parameter_token_id)
-
-    from .decoder import mask_allow_token
     return mask_allow_token(logits, allowed_parameter_ids)
 
 

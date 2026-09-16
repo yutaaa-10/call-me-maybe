@@ -178,6 +178,8 @@ def main() -> None:
                 results.append(result)
                 break
 
+
+    print(results)
     dir_path = "data/output"
     os.makedirs(dir_path, exist_ok = True)
     with open(f"{dir_path}/function_calling_results.json", "w", encoding="utf-8") as file:
