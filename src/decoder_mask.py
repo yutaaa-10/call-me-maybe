@@ -75,12 +75,15 @@ def mask_function_name(
     allowed_function_ids: list[int] = []
     current_position = len(function_generated_ids)
 
+    #それぞれのfunctionのcurrnt positionを見ていく
     for function_name_ids in function_names_ids:
         is_matching = True
         for position in range(current_position):
+            #関数名がpositionよりも短い
             if position >= len(function_name_ids):
                 is_matching = False
                 break
+            #作ったきたfunction_generatedと違ったら
             if function_generated_ids[position] != function_name_ids[position]:
                 is_matching = False
                 break

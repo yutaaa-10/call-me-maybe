@@ -89,7 +89,7 @@ def handle_parameter_name(
         len(generated_ids),
     )
 
-def value_is_complete(
+def string_is_complete(
         value_generated_ids: list[int],
         selected_function: FunctionFormat | None,
         selected_parameter: str,
@@ -113,32 +113,22 @@ def value_is_complete(
 
     if not value_generated_ids:
         return False
-
     if selected_function is None:
         return False
 
-    parameter_info = selected_function.parameters[selected_parameter]
-    parameter_type = parameter_info.type
-
+    #今できているvalueをテキストに戻す
     value_text = model.decode(value_generated_ids)
 
-    if parameter_type == "number":
-        try:
-            float(value_text)
-            return True
-        except ValueError:
-            return False
-    if parameter_type == "string":
-        if len(value_text) < 3:
-            return False
-        if not value_text.startswith('"'):
-            return False
-        if not value_text.endswith('"'):
-            return False
-        if value_text.count('"') != 2:
-            return False
-        return True
-
+    #stringならば、"a"などの最低3文字以上か、どうかなどを判定
+    if len(value_text) < 3:
+        return False
+    if not value_text.startswith('"'):
+        return False
+    if not value_text.endswith('"'):
+        return False
+    if value_text.count('"') != 2:
+        return False
+    return True
 
 
 def handle_parameter_value(
@@ -234,7 +224,7 @@ def handle_parameter_value(
 
     value_generated_ids.append(next_token_id)
 
-    if value_is_complete(
+    if string_is_complete(
         value_generated_ids,
         selected_function,
         selected_parameter,

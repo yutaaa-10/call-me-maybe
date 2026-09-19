@@ -50,10 +50,12 @@ def constrained_decoding(
     colon_ids = model.encode(":")[0].tolist()
     name_ids = model.encode('"name":')[0].tolist()
     parameters_ids = model.encode('"parameters":')[0].tolist()
+
     function_names_ids: list[list[int]] = []
     for function in function_list:
         function_name_ids = model.encode(f'"{function.name}"')[0].tolist()
         function_names_ids.append(function_name_ids)
+
     closing_brace_ids = model.encode("}")[0].tolist()
 
     if state == State.START:
@@ -82,7 +84,8 @@ def constrained_decoding(
 
     elif state == State.PARAMETER_VALUE:
         return mask_parameter_value(
-            logits, model,
+            logits,
+            model,
             selected_function,
             selected_parameter,
             value_generated_ids,
