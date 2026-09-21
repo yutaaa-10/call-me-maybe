@@ -184,6 +184,7 @@ def handle_parameter_value(
             value_generated_ids = []
             selected_parameter = None
 
+            ## 次のparameterの開始「"」まで生成されている場合、そのToken IDを保存する
             if next_token_text.startswith(',"'):
                 parameter_generated_ids = (
                     model.encode('"')[0].tolist()

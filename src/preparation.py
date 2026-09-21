@@ -105,20 +105,15 @@ def build_context(prompt: str, functions_text: str) -> str:
     return (
         "Available functions:\n"
         f"{functions_text}\n"
-        "Choose the correct function and exact parameter values.\n"
-        "Do not add extra characters to string parameters.\n"
-        "For regex parameters, generate only the pattern needed to match "
-        "the requested target.\n"
-        "For replacement parameters, generate only the literal replacement "
-        "requested by the user.\n"
+        "Select the function whose description best matches "
+        "the user's requested operation.\n"
+        "Use the function definition to determine the parameters.\n"
         "\n"
-        "Examples:\n"
-        "Request: Replace all vowels in 'hello' with asterisks\n"
-        'Output parameters: {"regex":"[aeiouAEIOU]","replacement":"*"}\n'
-        "\n"
-        "Request: Replace the word 'cat' with 'dog'\n"
-        'Output parameters: {"regex":"cat","replacement":"dog"}\n'
+        "Examples of repacement values:\n"
+        'with asteriskd -> "*"\n'
+        'with hyphens -> "-"\n'
+        'with NUMBERS -> "NUMBERS"\n'
         "\n"
         f"User request: {prompt}\n"
-        "Output:\n"
+        "Function call:\n"
     )

@@ -62,6 +62,7 @@ def main() -> None:
                 selected_parameter,
                 parameter_generated_ids,
                 value_generated_ids,
+                completed_parameters,
             )
 
             max_logit = masked_logits[0]

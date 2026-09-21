@@ -21,6 +21,7 @@ def constrained_decoding(
     selected_parameter: str | None,
     parameter_generated_ids: list[int],
     value_generated_ids: list[int],
+    completed_parameters: list[str],
 ) -> list[float]:
     """Apply decoding constraints based on the current generation state.
     The current state determines which tokens are valid for the next
@@ -77,7 +78,7 @@ def constrained_decoding(
         return mask_allow_token(logits, braces_id)
 
     elif state == State.PARAMETER_NAME:
-        return mask_parameter_name(logits, model, selected_function, parameter_generated_ids)
+        return mask_parameter_name(logits, model, selected_function, parameter_generated_ids, completed_parameters)
 
     elif state == State.PARAMETER_COLON:
         return mask_allow_token(logits, colon_ids)

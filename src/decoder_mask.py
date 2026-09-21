@@ -103,7 +103,8 @@ def mask_parameter_name(
     logits: list[float],
     model: Small_LLM_Model,
     selected_function: FunctionFormat | None,
-    parameter_generated_ids: list[int]
+    parameter_generated_ids: list[int],
+    completed_parameters: list[str],
 ) -> list[float]:
     """Restrict generation to parameter names of the selected function.
     Parameter names are tokenized and compared with the prefix generated
@@ -121,10 +122,14 @@ def mask_parameter_name(
     """
     if selected_function is None:
         return logits
+
     parameter_names_ids: list[list[int]] = []
     for parameter_name in selected_function.parameters:
+        if parameter_name in completed_parameters:
+            continue
         parameter_name_ids = model.encode(f'"{parameter_name}"')[0].tolist()
         parameter_names_ids.append(parameter_name_ids)
+
     allowed_parameter_ids: list[int] = []
     current_position = len(parameter_generated_ids)
 
@@ -137,7 +142,7 @@ def mask_parameter_name(
             if parameter_generated_ids[position] != parameter_name_ids[position]:
                 is_matching = False
                 break
-        if is_matching is False:
+        if not is_matching:
             continue
         if current_position >= len(parameter_name_ids):
             continue
@@ -171,17 +176,23 @@ def parameter_value_number(
 
     """
 
+    #数値として成り立つか
     number_is_complete = is_complete_number(value_text)
+
     for token_id in range(len(logits)):
         token_text = model.decode([token_id])
         candidate_value = value_text + token_text
+        #くっつけた時に数値かどうか
         can_continue_number = is_valid_number_prefix(candidate_value)
+
         starts_separator = False
         if number_is_complete:
             if token_id in comma_ids:
                 starts_separator = True
             if token_id in closing_brace_ids:
                 starts_separator = True
+
+        #数値ではないかつ、,}でないなら負の無限大
         if not can_continue_number and not starts_separator:
             logits[token_id] = float("-inf")
     return logits
@@ -211,6 +222,7 @@ def parameter_value_string(
     for token_id in range(len(logits)):
         token_text = model.decode([token_id])
         candidate_value = value_text + token_text
+        #まだ何も生成していない時は必ず"にする
         if value_text == "":
             if token_id not in quote_ids:
                 logits[token_id] = float("-inf")
@@ -218,18 +230,23 @@ def parameter_value_string(
         if not value_text.startswith('"'):
             logits[token_id] = float("-inf")
             continue
+        #改行文字などの制御文字を禁止
         if "\n" in token_text or "\r" in token_text:
             logits[token_id] = float("-inf")
             continue
+        #{,}も禁止にしている
         if "{" in token_text or "}" in token_text:
             logits[token_id] = float("-inf")
             continue
+        #\\も判定が難しくなるので禁止
         if '\\"' in token_text:
             logits[token_id] = float("-inf")
             continue
+        #"の次に"になることを禁止
         if candidate_value == '""':
             logits[token_id] = float("-inf")
             continue
+        #"が三個以上は禁止
         if candidate_value.count('"') > 2:
             logits[token_id] = float("-inf")
             continue
@@ -237,6 +254,8 @@ def parameter_value_string(
             if not candidate_value.endswith('"'):
                 logits[token_id] = float("-inf")
                 continue
+
+    # 文字列が終わらず続くことを防ぐため、閉じる「"」のlogitを上げる
     if len(value_text) > 1:
         for quote_id in quote_ids:
             if logits[quote_id] != float("-inf"):
@@ -280,9 +299,10 @@ def mask_parameter_value(
     parameter_type = parameter_info.type
     value_text = model.decode(value_generated_ids)
 
+    #全logitsを調べて「数値として続けられるToken」または,}以外を -inf にして生成候補から除外する。
     if parameter_type == "number":
         return parameter_value_number(logits, model, value_text, comma_ids, closing_brace_ids)
-
+    #語彙にある全Tokenのlogitsを確認して、「次の文字列Tokenとして不正な候補」を -inf にして除外する
     elif parameter_type == "string":
         return parameter_value_string(logits, model, value_text)
 
