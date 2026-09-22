@@ -18,7 +18,7 @@ def constrained_decoding(
     function_generated_ids: list[int],
     state_start_position: int,
     selected_function: FunctionFormat | None,
-    selected_parameter: str | None,
+    selected_parameters: str | None,
     parameter_generated_ids: list[int],
     value_generated_ids: list[int],
     completed_parameters: list[str],
@@ -63,22 +63,41 @@ def constrained_decoding(
         return mask_allow_token(logits, braces_id)
 
     elif state == State.FUNCTION_KEY:
-        return mask_fixed_sequence(logits, generated_ids, state_start_position, name_ids)
+        return mask_fixed_sequence(
+            logits,
+            generated_ids,
+            state_start_position,
+            name_ids
+        )
 
     elif state == State.FUNCTION_NAME:
-        return mask_function_name(logits, function_generated_ids, function_names_ids)
+        return mask_function_name(
+            logits,
+            function_generated_ids,
+            function_names_ids
+        )
 
     elif state == State.FUNCTION_SEPARATOR:
         return mask_allow_token(logits, comma_ids)
 
     elif state == State.PARAMETERS_KEY:
-        return mask_fixed_sequence(logits, generated_ids, state_start_position, parameters_ids)
+        return mask_fixed_sequence(
+            logits,
+            generated_ids,
+            state_start_position,
+            parameters_ids
+        )
 
     elif state == State.PARAMETERS_START:
         return mask_allow_token(logits, braces_id)
 
     elif state == State.PARAMETER_NAME:
-        return mask_parameter_name(logits, model, selected_function, parameter_generated_ids, completed_parameters)
+        return mask_parameter_name(
+            logits,
+            model,
+            selected_function,
+            parameter_generated_ids,
+            completed_parameters)
 
     elif state == State.PARAMETER_COLON:
         return mask_allow_token(logits, colon_ids)
@@ -88,10 +107,11 @@ def constrained_decoding(
             logits,
             model,
             selected_function,
-            selected_parameter,
+            selected_parameters,
             value_generated_ids,
             comma_ids,
-            closing_brace_ids
+            closing_brace_ids,
+            completed_parameters,
         )
 
     elif state == State.PARAMETER_SEPARATOR:

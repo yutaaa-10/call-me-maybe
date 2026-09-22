@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from enum import Enum
 
+
 class PromptData(BaseModel):
     """Represent and validate a user prompt."""
     prompt: str
@@ -21,6 +22,7 @@ class FunctionFormat(BaseModel):
     description: str
     parameters: dict[str, ParameterInfo]
     returns: ParameterInfo
+
 
 class State(Enum):
     """Represent each state of the constrained JSON generation process."""

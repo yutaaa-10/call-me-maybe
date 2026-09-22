@@ -1,3 +1,25 @@
+import re
+
+
+def is_complete_regex(text: str) -> bool:
+    """Check whether the generated regex is syntactically valid."""
+
+    if not text.startswith('"'):
+        return False
+
+    regex_text = text[1:]
+
+    if regex_text == "":
+        return False
+
+    try:
+        re.compile(regex_text)
+    except re.error:
+        return False
+
+    return True
+
+
 def is_complete_number(text: str) -> bool:
     """Check whether the given text represents a complete valid number.
 
@@ -15,6 +37,7 @@ def is_complete_number(text: str) -> bool:
         return False
 
     return True
+
 
 def is_valid_number_prefix(text: str) -> bool:
     """Check whether the text can still become a valid number.

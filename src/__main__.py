@@ -1,6 +1,10 @@
+import sys
+import argparse
+from pathlib import Path
+import json
 from llm_sdk.llm_sdk import Small_LLM_Model
 from .models import State
-import json
+from .decoder import constrained_decoding
 from .preparation import (
     open_file,
     check_prompts,
@@ -8,13 +12,14 @@ from .preparation import (
     build_functions_text,
     build_context,
 )
-from .state_handler import handle_function_name, handle_parameter_name, handle_parameter_value
-from .decoder import constrained_decoding
-import os
+from .state_handler import (
+    handle_function_name,
+    handle_parameter_name,
+    handle_parameter_value
+)
 
 
-
-def main() -> None:
+def main() -> int:
     """Run the function-calling generation workflow.
     Load and validate prompts and function definitions, initialize the
     language model, prepare the available function information, and
@@ -22,19 +27,47 @@ def main() -> None:
 
     """
 
-    prompts = open_file("data/input/function_calling_tests.json")
-    prompt_list = check_prompts(prompts)
+    parser = argparse.ArgumentParser(
+        description="Generate function calls from natural-language prompts."
+    )
+    parser.add_argument(
+        "--functions_definition",
+        default="data/input/functions_definition.json",
+        help="Path to the function definitions JSON file.",
+    )
+    parser.add_argument(
+        "--input",
+        default="data/input/function_calling_tests.json",
+        help="Path to the input prompts JSON file.",
+    )
+    parser.add_argument(
+        "--output",
+        default="data/output/function_calling_results.json",
+        help="Path to the output JSON file.",
+    )
+    args = parser.parse_args()
 
-    functions = open_file("data/input/functions_definition.json")
+    prompts = open_file(args.input)
+    if prompts is None:
+        return 1
+
+    functions = open_file(args.functions_definition)
+    if functions is None:
+        return 1
+
+    prompt_list = check_prompts(prompts)
+    if prompt_list is None:
+        return 1
     functions_list = check_functions(functions)
+    if functions_list is None:
+        return 1
 
     model = Small_LLM_Model()
     functions_text = build_functions_text(functions_list)
-    results: list[dict] = []
-
+    results: list[dict[str, object]] = []
 
     for prompt in prompt_list:
-        print("CURRENT PROMPT:", prompt)
+        print(prompt)
         encode_context = build_context(prompt, functions_text)
         token_ids = model.encode(encode_context)[0].tolist()
 
@@ -46,7 +79,7 @@ def main() -> None:
         state = State.START
         state_start_position = 0
         selected_function = None
-        selected_parameter = None
+        selected_parameters = None
 
         while True:
             logits = model.get_logits_from_input_ids(token_ids)
@@ -59,11 +92,17 @@ def main() -> None:
                 function_generated_ids,
                 state_start_position,
                 selected_function,
-                selected_parameter,
+                selected_parameters,
                 parameter_generated_ids,
                 value_generated_ids,
                 completed_parameters,
             )
+            if all(logit == float("-inf") for logit in masked_logits):
+                print(
+                    f"Error: No valid token available in state {state.value}.",
+                    file=sys.stderr,
+                )
+                return 1
 
             max_logit = masked_logits[0]
             next_token_id = 0
@@ -82,7 +121,8 @@ def main() -> None:
 
             elif state == State.FUNCTION_KEY:
                 function_ids = model.encode('"name":')[0].tolist()
-                state_generated_count = len(generated_ids) - state_start_position
+                state_generated_count = len(
+                    generated_ids) - state_start_position
 
                 if state_generated_count == len(function_ids):
                     state = State.FUNCTION_NAME
@@ -103,11 +143,12 @@ def main() -> None:
 
             elif state == State.FUNCTION_SEPARATOR:
                 state = State.PARAMETERS_KEY
-                state_start_position = len (generated_ids)
+                state_start_position = len(generated_ids)
 
             elif state == State.PARAMETERS_KEY:
                 parameter_ids = model.encode('"parameters":')[0].tolist()
-                state_generated_count = len(generated_ids) - state_start_position
+                state_generated_count = len(
+                    generated_ids) - state_start_position
 
                 if state_generated_count == len(parameter_ids):
                     state = State.PARAMETERS_START
@@ -120,7 +161,7 @@ def main() -> None:
             elif state == State.PARAMETER_NAME:
                 (
                     state,
-                    selected_parameter,
+                    selected_parameters,
                     state_start_position,
                 ) = handle_parameter_name(
                     model,
@@ -130,7 +171,6 @@ def main() -> None:
                     next_token_id,
                 )
 
-
             elif state == State.PARAMETER_COLON:
                 state = State.PARAMETER_VALUE
                 state_start_position = len(generated_ids)
@@ -138,14 +178,14 @@ def main() -> None:
             elif state == State.PARAMETER_VALUE:
                 (
                     state,
-                    selected_parameter,
+                    selected_parameters,
                     parameter_generated_ids,
                     value_generated_ids,
                     state_start_position,
-                ) = handle_parameter_value (
+                ) = handle_parameter_value(
                     model,
                     selected_function,
-                    selected_parameter,
+                    selected_parameters,
                     next_token_id,
                     generated_ids,
                     parameter_generated_ids,
@@ -157,7 +197,7 @@ def main() -> None:
                 state = State.PARAMETER_NAME
                 parameter_generated_ids = []
                 value_generated_ids = []
-                selected_parameter = None
+                selected_parameters = None
                 state_start_position = len(generated_ids)
 
             elif state == State.PARAMETERS_END:
@@ -166,8 +206,16 @@ def main() -> None:
 
             elif state == State.END:
                 generated_text = model.decode(generated_ids)
-                print("GENERATED:", repr(generated_text))
-                generated_result = json.loads(generated_text)
+                try:
+                    generated_result = json.loads(generated_text)
+                except json.JSONDecodeError as e:
+                    print(
+                        f"Error: Generated invalid "
+                        f"JSON for prompt {prompt!r}: {e}",
+                        file=sys.stderr,
+                    )
+                    return 1
+
                 result = {
                     "prompt": prompt,
                     "name": generated_result["name"],
@@ -176,10 +224,26 @@ def main() -> None:
                 results.append(result)
                 break
 
-    dir_path = "data/output"
-    os.makedirs(dir_path, exist_ok = True)
-    with open(f"{dir_path}/function_calling_results.json", "w", encoding="utf-8") as file:
-        json.dump(results, file, indent=4, ensure_ascii=False)
+    output_path = Path(args.output)
+
+    try:
+        output_text = json.dumps(
+            results,
+            indent=4,
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(output_text + "\n", encoding="utf-8")
+    except (OSError, ValueError, TypeError) as e:
+        print(
+            f"Error: Cannot save output to {output_path}: {e}",
+            file=sys.stderr,
+        )
+        return 1
+
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

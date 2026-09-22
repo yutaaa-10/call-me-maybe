@@ -1,32 +1,59 @@
 from json import load, JSONDecodeError
 from pydantic import ValidationError
 from .models import PromptData, FunctionFormat
+import sys
 
-def open_file(prompt_file: str) -> list:
-    """Load JSON data from a file.
+
+def open_file(input_path: str) -> list[object] | None:
+    """Load a JSON array from an input file.
 
     Args:
-        prompt_file: Path to the JSON file
+        input_path: Path to a UTF-8 JSON file.
 
     Returns:
-        The parsed JSON data as a file.
-        Returns an empty list if the file is not found
-        or the JSON in invlid.
-
+        The loaded list, or None if reading or validation fails.
     """
-
     try:
-        with open(prompt_file, 'r', encoding='UTF-8') as json_file:
-            return load(json_file)
+        with open(input_path, "r", encoding="utf-8") as json_file:
+            data = load(json_file)
     except FileNotFoundError:
-        print("not found file")
-        return []
-    except JSONDecodeError:
-        print("It is not the correct JSON format")
-        return []
+        print(
+            f"Error: Input file not found: {input_path}",
+            file=sys.stderr,
+        )
+        return None
+    except JSONDecodeError as error:
+        print(
+            f"Error: Invalid JSON in {input_path} "
+            f"(line {error.lineno}, column {error.colno}): "
+            f"{error.msg}",
+            file=sys.stderr,
+        )
+        return None
+    except UnicodeDecodeError:
+        print(
+            f"Error: Input file is not valid UTF-8: {input_path}",
+            file=sys.stderr,
+        )
+        return None
+    except OSError as error:
+        print(
+            f"Error: Cannot read input file {input_path}: {error}",
+            file=sys.stderr,
+        )
+        return None
+
+    if not isinstance(data, list):
+        print(
+            f"Error: Expected a JSON array in {input_path}.",
+            file=sys.stderr,
+        )
+        return None
+
+    return data
 
 
-def check_prompts(prompts: list) -> list[str]:
+def check_prompts(prompts: list[object]) -> list[str] | None:
     """Validate prompt data and extract prompt strings.
 
     Args:
@@ -36,19 +63,33 @@ def check_prompts(prompts: list) -> list[str]:
         A list containing all valid prompt strings.
 
     """
+    if not prompts:
+        print(
+            "Error: The prompt list is empty.",
+            file=sys.stderr,
+        )
+        return None
 
     prompt_list: list[str] = []
-    for item in prompts:
+
+    for index, item in enumerate(prompts, start=1):
         try:
             prompt_data = PromptData.model_validate(item)
-            prompt_text = prompt_data.prompt
-            prompt_list.append(prompt_text)
-        except ValidationError as e:
-            print(f"Invalid prompt data: {e}")
+        except ValidationError as error:
+            print(
+                f"Error: Invalid prompt entry #{index}: {error}",
+                file=sys.stderr,
+            )
+            return None
+
+        prompt_list.append(prompt_data.prompt)
+
     return prompt_list
 
 
-def check_functions(functions: list) -> list[FunctionFormat]:
+def check_functions(
+    functions: list[object]
+) -> list[FunctionFormat] | None:
     """Validate raw function definitions.
 
     Args:
@@ -58,13 +99,37 @@ def check_functions(functions: list) -> list[FunctionFormat]:
         A list of validated FunctionFormat objects.
 
     """
+    if not functions:
+        print(
+            "Error: The function definition list is empty.",
+            file=sys.stderr,
+        )
+        return None
+
     functions_list: list[FunctionFormat] = []
-    for item in functions:
+    function_names: set[str] = set()
+
+    for index, item in enumerate(functions, start=1):
         try:
             function_data = FunctionFormat.model_validate(item)
-            functions_list.append(function_data)
-        except ValidationError as e:
-            print(f"Invalid function data: {e}")
+        except ValidationError as error:
+            print(
+                f"Error: Invalid function entry #{index}: {error}",
+                file=sys.stderr,
+            )
+            return None
+
+        if function_data.name in function_names:
+            print(
+                f"Error: Duplicate function name at entry #{index}: "
+                f"{function_data.name}",
+                file=sys.stderr,
+            )
+            return None
+
+        function_names.add(function_data.name)
+        functions_list.append(function_data)
+
     return functions_list
 
 
@@ -90,6 +155,7 @@ def build_functions_text(functions_list: list[FunctionFormat]) -> str:
         functions_text += f"returns: {function.returns.type}\n"
     return functions_text
 
+
 def build_context(prompt: str, functions_text: str) -> str:
     """Build the input context for the language model.
 
@@ -113,6 +179,11 @@ def build_context(prompt: str, functions_text: str) -> str:
         'with asteriskd -> "*"\n'
         'with hyphens -> "-"\n'
         'with NUMBERS -> "NUMBERS"\n'
+        "\n"
+        "For regex parameters, generate"
+        "the pattern that matches the text to be replaced.\n"
+        "For replacement parameters, "
+        "generate the new text that should replace it.\n"
         "\n"
         f"User request: {prompt}\n"
         "Function call:\n"
