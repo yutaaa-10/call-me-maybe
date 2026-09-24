@@ -3,7 +3,7 @@ import argparse
 from pathlib import Path
 import json
 from llm_sdk.llm_sdk import Small_LLM_Model
-from .models import State
+from .models import State, FunctionFormat
 from .decoder import constrained_decoding
 from .preparation import (
     open_file,
@@ -18,7 +18,6 @@ from .state_handler import (
     handle_parameter_value
 )
 from .token_cache import encode_ids
-from .models import State, FunctionFormat
 
 
 def prepare_inputs() -> (
@@ -254,8 +253,6 @@ def main() -> int:
                 }
                 results.append(result)
                 break
-
-    output_path = Path(args.output)
 
     try:
         output_text = json.dumps(

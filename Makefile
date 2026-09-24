@@ -6,7 +6,7 @@ INPUT = data/input/function_calling_tests.json
 OUTPUT = data/output/function_calling_results.json
 
 install:
-	uv tool pip install flake8 mypy
+	uv sync
 
 run:
 	uv run $(PYTHON) $(NAME) \
@@ -22,12 +22,12 @@ clean:
 	rm -rf .mypy_cache .pytest_cache
 
 lint:
-	flake8 src
-	mypy src --warn-return-any --warn-unused-ignores --ignore-missing-imports \
+	uv run flake8 src
+	uv run mypy src --warn-return-any --warn-unused-ignores --ignore-missing-imports \
 		--disallow-untyped-defs --check-untyped-defs
 
 lint-strict:
-	flake8 src
-	mypy src --strict
+	uv run flake8 src
+	uv run mypy src --strict
 
 .PHONY: install run debug clean lint lint-strict%

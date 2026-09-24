@@ -1,5 +1,6 @@
 import re
 
+
 def count_unescaped_quotes(text: str) -> int:
     """Count double quotes that are not escaped with a backslash."""
 
@@ -18,6 +19,7 @@ def count_unescaped_quotes(text: str) -> int:
 
     return count
 
+
 def is_valid_integer_prefix(text: str) -> bool:
 
     """Check whether text can still become a valid integer."""
@@ -31,6 +33,7 @@ def is_valid_integer_prefix(text: str) -> bool:
         start_index = 1
 
     return text[start_index:].isdigit()
+
 
 def is_complete_regex(text: str) -> bool:
     """Check whether the generated regex is syntactically valid."""

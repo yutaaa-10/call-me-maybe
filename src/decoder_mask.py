@@ -160,7 +160,6 @@ def mask_parameter_name(
     return mask_allow_token(logits, allowed_parameter_ids)
 
 
-
 def mask_parameter_value(
     logits: list[float],
     model: Small_LLM_Model,
