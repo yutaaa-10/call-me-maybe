@@ -17,16 +17,19 @@ from .state_handler import (
     handle_parameter_name,
     handle_parameter_value
 )
+from .token_cache import encode_ids
+from .models import State, FunctionFormat
 
 
-def main() -> int:
-    """Run the function-calling generation workflow.
-    Load and validate prompts and function definitions, initialize the
-    language model, prepare the available function information, and
-    process each prompt to generate function calls.
+def prepare_inputs() -> (
+    tuple[list[str], list[FunctionFormat], Path] | None
+):
+    """Parse CLI arguments and load validated inputs.
 
+    Returns:
+        Prompts, function definitions, and the output path.
+        Returns None if input loading or validation fails.
     """
-
     parser = argparse.ArgumentParser(
         description="Generate function calls from natural-language prompts."
     )
@@ -49,22 +52,41 @@ def main() -> int:
 
     prompts = open_file(args.input)
     if prompts is None:
-        return 1
+        return None
 
     functions = open_file(args.functions_definition)
     if functions is None:
-        return 1
+        return None
 
     prompt_list = check_prompts(prompts)
     if prompt_list is None:
-        return 1
+        return None
+
     functions_list = check_functions(functions)
     if functions_list is None:
+        return None
+
+    return prompt_list, functions_list, Path(args.output)
+
+
+def main() -> int:
+    """Run the function-calling generation workflow.
+    Load and validate prompts and function definitions, initialize the
+    language model, prepare the available function information, and
+    process each prompt to generate function calls.
+
+    """
+
+    prepared = prepare_inputs()
+    if prepared is None:
         return 1
+    prompt_list, functions_list, output_path = prepared
 
     model = Small_LLM_Model()
     functions_text = build_functions_text(functions_list)
     results: list[dict[str, object]] = []
+
+    MAX_GENERATION_STEPS = 200
 
     for prompt in prompt_list:
         print(prompt)
@@ -81,7 +103,16 @@ def main() -> int:
         selected_function = None
         selected_parameters = None
 
+        generation_count = 0
+
         while True:
+            generation_count += 1
+            if generation_count > MAX_GENERATION_STEPS:
+                print(
+                    f"Error: Generation limit reached for prompt {prompt!r}",
+                    file=sys.stderr,
+                )
+                return 1
             logits = model.get_logits_from_input_ids(token_ids)
             masked_logits = constrained_decoding(
                 logits,
@@ -120,7 +151,7 @@ def main() -> int:
                 state_start_position = len(generated_ids)
 
             elif state == State.FUNCTION_KEY:
-                function_ids = model.encode('"name":')[0].tolist()
+                function_ids = encode_ids(model, '"name":')
                 state_generated_count = len(
                     generated_ids) - state_start_position
 
@@ -146,7 +177,7 @@ def main() -> int:
                 state_start_position = len(generated_ids)
 
             elif state == State.PARAMETERS_KEY:
-                parameter_ids = model.encode('"parameters":')[0].tolist()
+                parameter_ids = encode_ids(model, '"parameters":')
                 state_generated_count = len(
                     generated_ids) - state_start_position
 

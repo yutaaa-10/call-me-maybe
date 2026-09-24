@@ -1,5 +1,6 @@
 from llm_sdk.llm_sdk import Small_LLM_Model
 from .models import State, FunctionFormat
+from .token_cache import encode_ids
 
 
 def handle_function_name(
@@ -28,7 +29,7 @@ def handle_function_name(
 
     function_generated_ids.append(next_token_id)
     for function in functions_list:
-        function_name_ids = model.encode(f'"{function.name}"')[0].tolist()
+        function_name_ids = encode_ids(model, f'"{function.name}"')
         if function_generated_ids == function_name_ids:
             selected_function = function
             state = State.FUNCTION_SEPARATOR
@@ -74,9 +75,7 @@ def handle_parameter_name(
 
     if selected_function is not None:
         for parameter_name in selected_function.parameters:
-            parameter_name_ids = model.encode(
-                f'"{parameter_name}"'
-            )[0].tolist()
+            parameter_name_ids = encode_ids(model, f'"{parameter_name}"')
 
             if parameter_generated_ids == parameter_name_ids:
                 return (
@@ -178,7 +177,7 @@ def handle_parameter_value(
     parameter_type = selected_function.parameters[selected_parameter].type
     next_token_text = model.decode([next_token_id])
 
-    if parameter_type == "number":
+    if parameter_type in ("number", "integer"):
         # valueの後に,が来たら
         if next_token_text.startswith(","):
             completed_parameters.append(selected_parameter)
@@ -189,10 +188,7 @@ def handle_parameter_value(
 
             # 次のparameterの開始「"」まで生成されている場合、そのToken IDを保存する
             if next_token_text.startswith(',"'):
-                parameter_generated_ids = (
-                    model.encode('"')[0].tolist()
-                )
-
+                parameter_generated_ids = encode_ids(model, '"')
             return (
                 State.PARAMETER_NAME,
                 selected_parameter,

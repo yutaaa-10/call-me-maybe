@@ -7,6 +7,7 @@ from .decoder_mask import (
     mask_parameter_name,
     mask_parameter_value,
 )
+from .token_cache import encode_ids
 
 
 def constrained_decoding(
@@ -46,18 +47,18 @@ def constrained_decoding(
 
     """
 
-    braces_id = model.encode("{")[0].tolist()
-    comma_ids = model.encode(",")[0].tolist()
-    colon_ids = model.encode(":")[0].tolist()
-    name_ids = model.encode('"name":')[0].tolist()
-    parameters_ids = model.encode('"parameters":')[0].tolist()
+    braces_id = encode_ids(model, "{")
+    comma_ids = encode_ids(model, ",")
+    colon_ids = encode_ids(model, ":")
+    name_ids = encode_ids(model, '"name":')
+    parameters_ids = encode_ids(model, '"parameters":')
 
     function_names_ids: list[list[int]] = []
     for function in function_list:
-        function_name_ids = model.encode(f'"{function.name}"')[0].tolist()
+        function_name_ids = encode_ids(model, f'"{function.name}"')
         function_names_ids.append(function_name_ids)
 
-    closing_brace_ids = model.encode("}")[0].tolist()
+    closing_brace_ids = encode_ids(model, "}")
 
     if state == State.START:
         return mask_allow_token(logits, braces_id)

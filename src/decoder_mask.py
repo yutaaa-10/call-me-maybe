@@ -1,10 +1,11 @@
-from .validators import (
-    is_valid_number_prefix,
-    is_complete_number,
-    is_complete_regex,
-)
 from llm_sdk.llm_sdk import Small_LLM_Model
 from .models import FunctionFormat
+from .token_cache import encode_ids
+from .parameter_value_detail import (
+    parameter_value_number,
+    parameter_value_string,
+    parameter_value_integer
+)
 
 
 def mask_allow_token(
@@ -131,7 +132,7 @@ def mask_parameter_name(
     for parameter_name in selected_function.parameters:
         if parameter_name in completed_parameters:
             continue
-        parameter_name_ids = model.encode(f'"{parameter_name}"')[0].tolist()
+        parameter_name_ids = encode_ids(model, f'"{parameter_name}"')
         parameter_names_ids.append(parameter_name_ids)
 
     allowed_parameter_ids: list[int] = []
@@ -158,152 +159,6 @@ def mask_parameter_name(
             allowed_parameter_ids.append(next_parameter_token_id)
     return mask_allow_token(logits, allowed_parameter_ids)
 
-
-def parameter_value_number(
-    logits: list[float],
-    model: Small_LLM_Model,
-    value_text: str,
-    comma_ids: list[int],
-    closing_brace_ids: list[int],
-    selected_function: FunctionFormat,
-    selected_parameters: str,
-    completed_parameters: list[str],
-) -> list[float]:
-    """Restrict generation to tokens that can form a valid number.
-    Tokens that cannot continue the current numeric value are masked.
-    Once the current value is a complete number, a comma or closing
-    brace is also allowed to terminate the value.
-
-    Args:
-        logits: Scores for every token in the model vocabulary.
-        model: Language model used to decode candidate tokens.
-        value_text: Numeric value generated so far.
-        comma_ids: Token IDs representing a comma.
-        closing_brace_ids: Token IDs representing a closing brace.
-
-    Returns:
-        The logits restricted to valid numeric continuations or endings.
-
-    """
-
-    # 数値として成り立つか
-    number_is_complete = is_complete_number(value_text)
-
-    number_can_finish = (
-        number_is_complete
-        and "." in value_text
-        and not value_text.endswith(".")
-    )
-
-    remaining_parametrs = [
-        parameter_name
-        for parameter_name in selected_function.parameters
-        if parameter_name not in completed_parameters
-        and parameter_name != selected_parameters
-    ]
-
-    has_next_parameter = len(remaining_parametrs) > 0
-
-    for token_id in range(len(logits)):
-        token_text = model.decode([token_id])
-        candidate_value = value_text + token_text
-        # くっつけた時に数値かどうか
-        can_continue_number = is_valid_number_prefix(candidate_value)
-        can_finish_number = False
-
-        if number_can_finish:
-            # 次のparameterがある場合だけ "," を許可
-            if has_next_parameter and token_id in comma_ids:
-                can_finish_number = True
-            # 最後のparameterなら "}" を許可
-            if not has_next_parameter and token_id in closing_brace_ids:
-                can_finish_number = True
-
-        # 数値ではないかつ、,}でないなら負の無限大
-        if not can_continue_number and not can_finish_number:
-            logits[token_id] = float("-inf")
-    return logits
-
-
-def parameter_value_string(
-    logits: list[float],
-    model: Small_LLM_Model,
-    value_text: str,
-    selected_parameter: str | None,
-) -> list[float]:
-    """Restrict generation to tokens that can form a valid JSON string.
-    The string must begin with a double quote and must not contain tokens
-    that would break the surrounding JSON structure. Once some content
-    has been generated, the closing quote receives a small logit bonus
-    to encourage the model to finish the string.
-
-    Args:
-        logits: Scores for every token in the model vocabulary.
-        model: Language model used to encode and decode tokens.
-        value_text: String value generated so far.
-
-    Returns:
-        The logits restricted to valid string continuations.
-
-    """
-    quote_ids = model.encode('"')[0].tolist()
-    for token_id in range(len(logits)):
-        token_text = model.decode([token_id])
-        candidate_value = value_text + token_text
-        # まだ何も生成していない時は必ず"にする
-        if value_text == "":
-            if token_id not in quote_ids:
-                logits[token_id] = float("-inf")
-            continue
-        if not value_text.startswith('"'):
-            logits[token_id] = float("-inf")
-            continue
-        # 改行文字などの制御文字を禁止
-        if "\n" in token_text or "\r" in token_text:
-            logits[token_id] = float("-inf")
-            continue
-        # {,}も禁止にしている
-        if "{" in token_text or "}" in token_text:
-            logits[token_id] = float("-inf")
-            continue
-        # \\も判定が難しくなるので禁止
-        if '\\"' in token_text:
-            logits[token_id] = float("-inf")
-            continue
-        # "の次に"になることを禁止
-        if candidate_value == '""':
-            logits[token_id] = float("-inf")
-            continue
-        # "が三個以上は禁止
-        if candidate_value.count('"') > 2:
-            logits[token_id] = float("-inf")
-            continue
-        if candidate_value.count('"') == 2:
-            if not candidate_value.endswith('"'):
-                logits[token_id] = float("-inf")
-                continue
-
-    if selected_parameter == "regex":
-        allowed_tokens: list[tuple[float, str, int]] = []
-        for token_id in range(len(logits)):
-            if logits[token_id] != float("-inf"):
-                token_text = model.decode([token_id])
-                allowed_tokens.append(
-                    (logits[token_id], token_text, token_id)
-                )
-        allowed_tokens.sort(reverse=True)
-
-    if selected_parameter == "regex":
-        if is_complete_regex(value_text):
-            for quote_id in quote_ids:
-                if logits[quote_id] != float("-inf"):
-                    logits[quote_id] += 10.0
-    # 通常のstringは従来通り
-    elif len(value_text) > 1:
-        for quote_id in quote_ids:
-            if logits[quote_id] != float("-inf"):
-                logits[quote_id] += 4.0
-    return logits
 
 
 def mask_parameter_value(
@@ -361,6 +216,18 @@ def mask_parameter_value(
             model,
             value_text,
             selected_parameters
+        )
+
+    elif parameter_type == "integer":
+        return parameter_value_integer(
+            logits,
+            model,
+            value_text,
+            comma_ids,
+            closing_brace_ids,
+            selected_function,
+            selected_parameters,
+            completed_parameters,
         )
 
     return logits
