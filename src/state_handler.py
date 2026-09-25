@@ -12,8 +12,7 @@ def handle_function_name(
 ) -> tuple[State, FunctionFormat | None, int]:
     """Handle state transitions while generating a function name.
     Append the newly generated token and compare the generated sequence
-    with the available function names. When a complete function name is
-    matched, select the function and move to the separator state.
+    with the available function names.
 
     Args:
         model: Language model used to encode function names.
@@ -57,8 +56,7 @@ def handle_parameter_name(
 ) -> tuple[State, str | None, int]:
     """Handle state transitions while generating a parameter name.
     Append the newly generated token and compare the generated sequence
-    with the parameter names of the selected function. When a complete
-    parameter name is matched, move to the parameter colon state.
+    with the parameter names of the selected function. 
 
     Args:
         model: Language model used to encode parameter names.
@@ -99,8 +97,7 @@ def string_is_complete(
 ) -> bool:
     """Check whether the generated parameter value is complete.
     Decode the generated value tokens and validate the result according
-    to the type of the selected parameter. Numbers must be convertible
-    to float, while strings must have valid opening and closing quotes.
+    to the type of the selected parameter. 
 
     Args:
         value_generated_ids: Parameter-value tokens generated so far.
@@ -118,10 +115,8 @@ def string_is_complete(
     if selected_function is None:
         return False
 
-    # 今できているvalueをテキストに戻す
     value_text = model.decode(value_generated_ids)
 
-    # stringならば、"a"などの最低3文字以上か、どうかなどを判定
     if len(value_text) < 3:
         return False
     if not value_text.startswith('"'):
@@ -146,8 +141,6 @@ def handle_parameter_value(
     """Handle state transitions while generating a parameter value.
     Process the newly generated token according to the parameter type.
     For numbers, detect separators or the end of the parameters object.
-    For other supported types, continue generation until the value is
-    complete. Completed parameters are recorded before changing state.
 
     Args:
         model: Language model used to decode generated tokens.
@@ -178,7 +171,6 @@ def handle_parameter_value(
     next_token_text = model.decode([next_token_id])
 
     if parameter_type in ("number", "integer"):
-        # valueの後に,が来たら
         if next_token_text.startswith(","):
             completed_parameters.append(selected_parameter)
 
@@ -186,7 +178,6 @@ def handle_parameter_value(
             value_generated_ids = []
             selected_parameter = None
 
-            # 次のparameterの開始「"」まで生成されている場合、そのToken IDを保存する
             if next_token_text.startswith(',"'):
                 parameter_generated_ids = encode_ids(model, '"')
             return (
@@ -197,7 +188,6 @@ def handle_parameter_value(
                 len(generated_ids),
             )
 
-        # valueの後に}が来たら
         if next_token_text.startswith("}"):
             completed_parameters.append(selected_parameter)
 

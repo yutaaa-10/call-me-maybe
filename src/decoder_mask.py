@@ -64,8 +64,7 @@ def mask_function_name(
 ) -> list[float]:
     """Restrict generation to valid function-name continuations.
     Function names whose token prefix does not match the tokens already
-    generated are discarded. Only valid next tokens from the remaining
-    function names are allowed.
+    generated are discarded. 
 
     Args:
         logits: Scores for every token in the model vocabulary.
@@ -80,15 +79,12 @@ def mask_function_name(
     allowed_function_ids: list[int] = []
     current_position = len(function_generated_ids)
 
-    # それぞれのfunctionのcurrnt positionを見ていく
     for function_name_ids in function_names_ids:
         is_matching = True
         for position in range(current_position):
-            # 関数名がpositionよりも短い
             if position >= len(function_name_ids):
                 is_matching = False
                 break
-            # 作ったきたfunction_generatedと違ったら
             if function_generated_ids[position] != function_name_ids[position]:
                 is_matching = False
                 break
@@ -113,7 +109,7 @@ def mask_parameter_name(
 ) -> list[float]:
     """Restrict generation to parameter names of the selected function.
     Parameter names are tokenized and compared with the prefix generated
-    so far. Only tokens that can continue a valid parameter name remain.
+    so far.
 
     Args:
         logits: Scores for every token in the model vocabulary.
@@ -172,8 +168,6 @@ def mask_parameter_value(
 ) -> list[float]:
     """Apply value constraints based on the selected parameter type.
     The selected parameter definition is inspected to determine its type.
-    Numeric parameters are handled by the number-value mask, while string
-    parameters are handled by the string-value mask.
 
     Args:
         logits: Scores for every token in the model vocabulary.
@@ -197,7 +191,6 @@ def mask_parameter_value(
     parameter_type = parameter_info.type
     value_text = model.decode(value_generated_ids)
 
-    # 全logitsを調べて「数値として続けられるToken」または,}以外を -inf にして生成候補から除外する。
     if parameter_type == "number":
         return parameter_value_number(
             logits, model,
@@ -208,7 +201,6 @@ def mask_parameter_value(
             selected_parameters,
             completed_parameters
         )
-    # 語彙にある全Tokenのlogitsを確認して、「次の文字列Tokenとして不正な候補」を -inf にして除外する
     elif parameter_type == "string":
         return parameter_value_string(
             logits,

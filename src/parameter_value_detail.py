@@ -20,8 +20,26 @@ def parameter_value_integer(
     selected_parameter: str,
     completed_parameters: list[str],
 ) -> list[float]:
+    """Apply integer value constraints during token generation.
+    The current integer text is extended with each possible token from the
+    model vocabulary.
 
-    """Restrict generation to tokens that can form a valid integer."""
+    Args:
+        logits: Scores for every token in the model vocabulary.
+        model: Language model used for token decoding.
+        value_text: Integer value text generated so far.
+        comma_ids: Token IDs representing a comma.
+        closing_brace_ids: Token IDs representing a closing brace.
+        selected_function: Function currently being generated.
+        selected_parameter: Parameter currently being generated.
+        completed_parameters: Parameters that have already been generated.
+
+    Returns:
+        The logits after masking tokens that cannot form or finish a valid
+        integer value.
+
+    """
+
     integer_is_complete = (
         value_text != ""
         and value_text != "-"
@@ -61,8 +79,6 @@ def parameter_value_number(
 ) -> list[float]:
     """Restrict generation to tokens that can form a valid number.
     Tokens that cannot continue the current numeric value are masked.
-    Once the current value is a complete number, a comma or closing
-    brace is also allowed to terminate the value.
 
     Args:
         logits: Scores for every token in the model vocabulary.
@@ -76,7 +92,6 @@ def parameter_value_number(
 
     """
 
-    # 数値として成り立つか
     number_is_complete = is_complete_number(value_text)
 
     number_can_finish = (
@@ -97,19 +112,15 @@ def parameter_value_number(
     for token_id in range(len(logits)):
         token_text = model.decode([token_id])
         candidate_value = value_text + token_text
-        # くっつけた時に数値かどうか
         can_continue_number = is_valid_number_prefix(candidate_value)
         can_finish_number = False
 
         if number_can_finish:
-            # 次のparameterがある場合だけ "," を許可
             if has_next_parameter and token_id in comma_ids:
                 can_finish_number = True
-            # 最後のparameterなら "}" を許可
             if not has_next_parameter and token_id in closing_brace_ids:
                 can_finish_number = True
 
-        # 数値ではないかつ、,}でないなら負の無限大
         if not can_continue_number and not can_finish_number:
             logits[token_id] = float("-inf")
     return logits
@@ -137,7 +148,6 @@ def parameter_value_string(
     for token_id in range(len(logits)):
         token_text = model.decode([token_id])
         candidate_value = value_text + token_text
-        # まだ何も生成していない時は必ず"にする
         if value_text == "":
             if token_id not in quote_ids:
                 logits[token_id] = float("-inf")
@@ -145,7 +155,6 @@ def parameter_value_string(
         if not value_text.startswith('"'):
             logits[token_id] = float("-inf")
             continue
-        # 改行文字などの制御文字を禁止
         if "\n" in token_text or "\r" in token_text:
             logits[token_id] = float("-inf")
             continue
@@ -166,7 +175,6 @@ def parameter_value_string(
             for quote_id in quote_ids:
                 if logits[quote_id] != float("-inf"):
                     logits[quote_id] += 10.0
-    # 通常のstringは従来通り
     elif len(value_text) > 1:
         for quote_id in quote_ids:
             if logits[quote_id] != float("-inf"):

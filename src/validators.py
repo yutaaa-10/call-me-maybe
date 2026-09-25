@@ -2,7 +2,17 @@ import re
 
 
 def count_unescaped_quotes(text: str) -> int:
-    """Count double quotes that are not escaped with a backslash."""
+    """Count double quotes that are not escaped by a backslash.
+    The text is scanned character by character while tracking whether the
+    current character is escaped.
+
+    Args:
+        text: Text in which to count unescaped double quotes.
+
+    Returns:
+        The number of unescaped double quotes found in the text.
+
+    """
 
     count = 0
     escaped = False
@@ -21,8 +31,17 @@ def count_unescaped_quotes(text: str) -> int:
 
 
 def is_valid_integer_prefix(text: str) -> bool:
+    """Check whether text can still form a valid integer.
+    An empty string and a single minus sign are accepted because additional
+    digits can still be generated.
 
-    """Check whether text can still become a valid integer."""
+    Args:
+        text: Integer text generated so far.
+
+    Returns:
+        True if the text can still become a valid integer, otherwise False.
+
+    """
 
     if text == "":
         return True
@@ -36,7 +55,19 @@ def is_valid_integer_prefix(text: str) -> bool:
 
 
 def is_complete_regex(text: str) -> bool:
-    """Check whether the generated regex is syntactically valid."""
+    """Check whether the generated text contains a complete valid regex.
+    The generated text must begin with a double quote. The content after
+    the opening quote is treated as the regular expression and is checked
+    using the standard library regex compiler.
+
+    Args:
+        text: Generated text containing the regular expression.
+
+    Returns:
+        True if the regex is complete and syntactically valid,
+        otherwise False.
+
+    """
 
     if not text.startswith('"'):
         return False
