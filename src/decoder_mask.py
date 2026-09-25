@@ -64,7 +64,7 @@ def mask_function_name(
 ) -> list[float]:
     """Restrict generation to valid function-name continuations.
     Function names whose token prefix does not match the tokens already
-    generated are discarded. 
+    generated are discarded.
 
     Args:
         logits: Scores for every token in the model vocabulary.

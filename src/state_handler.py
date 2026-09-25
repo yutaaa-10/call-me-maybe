@@ -56,7 +56,7 @@ def handle_parameter_name(
 ) -> tuple[State, str | None, int]:
     """Handle state transitions while generating a parameter name.
     Append the newly generated token and compare the generated sequence
-    with the parameter names of the selected function. 
+    with the parameter names of the selected function.
 
     Args:
         model: Language model used to encode parameter names.
@@ -97,7 +97,7 @@ def string_is_complete(
 ) -> bool:
     """Check whether the generated parameter value is complete.
     Decode the generated value tokens and validate the result according
-    to the type of the selected parameter. 
+    to the type of the selected parameter.
 
     Args:
         value_generated_ids: Parameter-value tokens generated so far.
